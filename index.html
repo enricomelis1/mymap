@@ -2,30 +2,24 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>Il mio WebGIS</title>
+  <title>WebGIS suoli + dryad</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-  <!-- Leaflet CSS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <div id="map"></div>
 
+  <!-- Legenda -->
   <div id="legend" class="legend">
     <h4>Legenda</h4>
     <div><span style="background: blue; transform: rotate(45deg);"></span> Dryad</div>
-    <div><span style="background: #4daf4a;"></span> Suoli (dinamici)</div>
+    <div><span style="background: #4daf4a;"></span> Suoli (da SIGLA_PEDO)</div>
   </div>
 
-  <!-- Leaflet JS -->
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-
   <script>
-    const map = L.map('map', {
-      center: [39.2, 8.6],
-      zoom: 8
-    });
+    const map = L.map('map');
 
     // Basemaps
     const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -33,29 +27,29 @@
     });
 
     const satellite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-      attribution: 'Tiles © Esri'
+      attribution: '© Esri'
     });
 
     const topo = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
       attribution: '© OpenTopoMap'
     });
 
-    // Aggiunge OSM di default
-    osm.addTo(map);
+    osm.addTo(map); // default layer
 
-    // Layer group
+    // Layers
     const dryadLayer = L.layerGroup();
     const suoliLayer = L.layerGroup();
 
-    // Icona rombo blu per i punti Dryad
+    // Icona rombo blu
     const diamondDiv = L.divIcon({
       className: 'diamond-icon',
       iconSize: [16, 16],
-      iconAnchor: [8, 8],
-      popupAnchor: [0, -8]
+      iconAnchor: [8, 8]
     });
 
-    // === Carica GeoJSON Dryad ===
+    const boundsArray = [];
+
+    // === Dryad ===
     fetch('data/dryad.geojson')
       .then(res => res.json())
       .then(data => {
@@ -64,52 +58,62 @@
           onEachFeature: (feature, layer) => {
             if (feature.properties) {
               layer.bindPopup(Object.entries(feature.properties)
-                .map(([k, v]) => `<strong>${k}</strong>: ${v}`).join('<br>'));
+                .map(([k, v]) => `<strong>${k}</strong>: ${v}`)
+                .join('<br>'));
             }
           }
         });
-        layer.addTo(dryadLayer);
+        dryadLayer.addLayer(layer);
         dryadLayer.addTo(map);
-        map.fitBounds(layer.getBounds());
+        boundsArray.push(layer.getBounds());
+        fitAllBounds();
       });
 
-    // === Carica GeoJSON Suoli ===
+    // === Suoli ===
     fetch('data/suoli.geojson')
       .then(res => res.json())
       .then(data => {
         const layer = L.geoJSON(data, {
-          style: feature => {
-            const value = feature.properties.SIGLA_PEDO || 'default';
-            return {
-              color: getColor(value),
-              weight: 2,
-              fillOpacity: 0.6
-            };
-          },
+          style: feature => ({
+            color: getColor(feature.properties.SIGLA_PEDO),
+            weight: 1,
+            fillOpacity: 0.5
+          }),
           onEachFeature: (feature, layer) => {
             if (feature.properties) {
               layer.bindPopup(Object.entries(feature.properties)
-                .map(([k, v]) => `<strong>${k}</strong>: ${v}`).join('<br>'));
+                .map(([k, v]) => `<strong>${k}</strong>: ${v}`)
+                .join('<br>'));
             }
           }
         });
-        layer.addTo(suoliLayer);
+        suoliLayer.addLayer(layer);
         suoliLayer.addTo(map);
-        map.fitBounds(layer.getBounds());
+        boundsArray.push(layer.getBounds());
+        fitAllBounds();
       });
 
-    // === Funzione per assegnare colori dinamici ===
-    function getColor(value) {
+    // Colori per SIGLA_PEDO
+    function getColor(sigla) {
       const palette = {
-        'Terra Rossa': '#e41a1c',
-        'Vertisuolo': '#377eb8',
-        'Calcisuolo': '#4daf4a',
+        'VR': '#e41a1c',
+        'CL': '#377eb8',
+        'TR': '#4daf4a',
+        'CM': '#984ea3',
         'default': '#999999'
       };
-      return palette[value] || palette['default'];
+      return palette[sigla] || palette['default'];
     }
 
-    // === Controlli mappa ===
+    // Fit ai bounds combinati
+    function fitAllBounds() {
+      if (boundsArray.length === 2) {
+        const all = boundsArray[0].extend(boundsArray[1]);
+        map.fitBounds(all);
+      }
+    }
+
+    // Layer control
     const baseMaps = {
       "OpenStreetMap": osm,
       "Satellite": satellite,
@@ -123,7 +127,7 @@
 
     L.control.layers(baseMaps, overlays).addTo(map);
 
-    // === Pulsante GPS ===
+    // Pulsante GPS
     const locateBtn = L.control({ position: 'topleft' });
     locateBtn.onAdd = function () {
       const div = L.DomUtil.create('div', 'leaflet-bar leaflet-control leaflet-control-custom');
