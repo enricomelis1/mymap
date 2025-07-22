@@ -10,6 +10,8 @@ body, html {
 #map {
   height: 100vh;
   width: 100%;
+  position: relative;
+  z-index: 0;
 }
 
 /* Rombo blu (segnaposto Dryad) */
@@ -22,7 +24,7 @@ body, html {
   border: 1px solid white;
 }
 
-/* Contenitori controlli e legenda */
+/* Legenda in basso a sinistra */
 #legend {
   position: absolute;
   bottom: 10px;
@@ -38,6 +40,7 @@ body, html {
   user-select: none;
 }
 
+/* Filtri e export in basso a destra */
 #filters-container {
   position: absolute;
   bottom: 10px;
