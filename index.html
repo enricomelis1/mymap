@@ -8,48 +8,64 @@
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
+  <div id="controls">
+    <label for="suoloFilter">Filtro suolo:</label>
+    <select id="suoloFilter">
+      <option value="">Tutti</option>
+    </select>
+  </div>
+
   <div id="map"></div>
 
   <!-- Legenda -->
   <div id="legend" class="legend">
-    <h4>Legenda</h4>
-    <div><span style="background: blue; transform: rotate(45deg);"></span> Dryad</div>
-    <div><span style="background: #4daf4a;"></span> Suoli (da SIGLA_PEDO)</div>
+    <h4>Legenda suoli</h4>
+    <div id="legend-items"></div>
   </div>
 
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
   <script>
     const map = L.map('map');
 
-    // Basemaps
     const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '© OpenStreetMap'
     });
-
     const satellite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
       attribution: '© Esri'
     });
-
     const topo = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
       attribution: '© OpenTopoMap'
     });
 
-    osm.addTo(map); // default layer
+    osm.addTo(map);
 
-    // Layers
     const dryadLayer = L.layerGroup();
-    const suoliLayer = L.layerGroup();
+    const suoliLayer = L.geoJSON(null);
+    const lucasLayer = L.layerGroup();
 
-    // Icona rombo blu
+    const baseMaps = {
+      "OpenStreetMap": osm,
+      "Satellite": satellite,
+      "Topografica": topo
+    };
+
+    const overlays = {
+      "Dryad": dryadLayer,
+      "Suoli": suoliLayer,
+      "Griglia LUCAS": lucasLayer
+    };
+
+    L.control.layers(baseMaps, overlays).addTo(map);
+
     const diamondDiv = L.divIcon({
       className: 'diamond-icon',
       iconSize: [16, 16],
       iconAnchor: [8, 8]
     });
 
-    const boundsArray = [];
+    let boundsArray = [];
+    const colorMap = {};
 
-    // === Dryad ===
     fetch('data/dryad.geojson')
       .then(res => res.json())
       .then(data => {
@@ -57,9 +73,7 @@
           pointToLayer: (feature, latlng) => L.marker(latlng, { icon: diamondDiv }),
           onEachFeature: (feature, layer) => {
             if (feature.properties) {
-              layer.bindPopup(Object.entries(feature.properties)
-                .map(([k, v]) => `<strong>${k}</strong>: ${v}`)
-                .join('<br>'));
+              layer.bindPopup(Object.entries(feature.properties).map(([k, v]) => `<strong>${k}</strong>: ${v}`).join('<br>'));
             }
           }
         });
@@ -69,63 +83,85 @@
         fitAllBounds();
       });
 
-    // === Suoli ===
     fetch('data/suoli.geojson')
       .then(res => res.json())
       .then(data => {
-        const layer = L.geoJSON(data, {
-          style: feature => ({
-            color: getColor(feature.properties.SIGLA_PEDO),
-            weight: 1,
-            fillOpacity: 0.5
-          }),
-          onEachFeature: (feature, layer) => {
-            if (feature.properties) {
-              layer.bindPopup(Object.entries(feature.properties)
-                .map(([k, v]) => `<strong>${k}</strong>: ${v}`)
-                .join('<br>'));
-            }
+        const sigle = [...new Set(data.features.map(f => f.properties.SIGLA_PEDO))];
+        sigle.forEach(sigla => {
+          colorMap[sigla] = randomColor();
+        });
+        updateLegend();
+        populateSuoloFilter(sigle);
+        suoliLayer.addData(data);
+        suoliLayer.setStyle(feature => ({
+          color: colorMap[feature.properties.SIGLA_PEDO] || '#999',
+          weight: 1,
+          fillOpacity: 0.5
+        }));
+        suoliLayer.eachLayer(layer => {
+          if (layer.feature && layer.feature.properties) {
+            layer.bindPopup(Object.entries(layer.feature.properties).map(([k, v]) => `<strong>${k}</strong>: ${v}`).join('<br>'));
           }
         });
-        suoliLayer.addLayer(layer);
         suoliLayer.addTo(map);
-        boundsArray.push(layer.getBounds());
+        boundsArray.push(suoliLayer.getBounds());
         fitAllBounds();
       });
 
-    // Colori per SIGLA_PEDO
-    function getColor(sigla) {
-      const palette = {
-        'VR': '#e41a1c',
-        'CL': '#377eb8',
-        'TR': '#4daf4a',
-        'CM': '#984ea3',
-        'default': '#999999'
-      };
-      return palette[sigla] || palette['default'];
-    }
+    fetch('data/lucas_grid.geojson')
+      .then(res => res.json())
+      .then(data => {
+        const layer = L.geoJSON(data, {
+          style: {
+            color: '#555',
+            weight: 1,
+            dashArray: '2,4',
+            fillOpacity: 0
+          }
+        });
+        lucasLayer.addLayer(layer);
+      });
 
-    // Fit ai bounds combinati
     function fitAllBounds() {
-      if (boundsArray.length === 2) {
-        const all = boundsArray[0].extend(boundsArray[1]);
+      if (boundsArray.length > 0) {
+        const all = boundsArray.reduce((a, b) => a.extend(b));
         map.fitBounds(all);
       }
     }
 
-    // Layer control
-    const baseMaps = {
-      "OpenStreetMap": osm,
-      "Satellite": satellite,
-      "Topografica": topo
-    };
+    function randomColor() {
+      return '#' + Math.floor(Math.random() * 16777215).toString(16);
+    }
 
-    const overlays = {
-      "Dryad": dryadLayer,
-      "Suoli": suoliLayer
-    };
+    function updateLegend() {
+      const container = document.getElementById('legend-items');
+      container.innerHTML = '';
+      for (const sigla in colorMap) {
+        const div = document.createElement('div');
+        div.innerHTML = `<span style="background:${colorMap[sigla]}"></span> ${sigla}`;
+        container.appendChild(div);
+      }
+    }
 
-    L.control.layers(baseMaps, overlays).addTo(map);
+    function populateSuoloFilter(sigle) {
+      const select = document.getElementById('suoloFilter');
+      sigle.sort().forEach(s => {
+        const opt = document.createElement('option');
+        opt.value = s;
+        opt.textContent = s;
+        select.appendChild(opt);
+      });
+      select.addEventListener('change', () => {
+        const val = select.value;
+        suoliLayer.eachLayer(layer => {
+          if (!val || layer.feature.properties.SIGLA_PEDO === val) {
+            layer.setStyle({ opacity: 1, fillOpacity: 0.5 });
+          } else {
+            layer.setStyle({ opacity: 0, fillOpacity: 0 });
+          }
+        });
+      });
+    }
 
     // Pulsante GPS
     const locateBtn = L.control({ position: 'topleft' });
@@ -139,7 +175,7 @@
     };
     locateBtn.addTo(map);
 
-    map.on('locationfound', function (e) {
+    map.on('locationfound', e => {
       L.circleMarker(e.latlng, {
         radius: 8,
         fillColor: "#3388ff",
