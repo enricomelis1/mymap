@@ -6,6 +6,16 @@ body {
   height: 100vh;
 }
 
+/* Icona rombo blu */
+.diamond-icon {
+  width: 16px;
+  height: 16px;
+  background-color: blue;
+  transform: rotate(45deg);
+  border: 1px solid darkblue;
+  border-radius: 2px;
+}
+
 /* Legenda */
 .legend {
   position: absolute;
@@ -15,7 +25,7 @@ body {
   padding: 10px;
   font-size: 14px;
   border-radius: 5px;
-  box-shadow: 0 0 15px rgba(0,0,0,0.2);
+  box-shadow: 0 0 15px rgba(0, 0, 0, 0.2);
 }
 .legend h4 {
   margin: 0 0 5px;
@@ -23,12 +33,14 @@ body {
 .legend div {
   display: flex;
   align-items: center;
+  margin-bottom: 5px;
 }
 .legend span {
-  width: 20px;
-  height: 10px;
-  margin-right: 8px;
+  width: 16px;
+  height: 16px;
   display: inline-block;
+  margin-right: 8px;
+  border: 1px solid #999;
 }
 
 /* Pulsante GPS */
@@ -39,5 +51,5 @@ body {
   text-align: center;
   line-height: 24px;
   border-radius: 4px;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.65);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.65);
 }
