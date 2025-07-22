@@ -1,71 +1,100 @@
-body, html {
+html, body, #map {
+  height: 100%;
   margin: 0;
   padding: 0;
-  height: 100%;
-  font-family: sans-serif;
 }
 
-#map {
-  height: 100vh;
-  width: 100vw;
+.label-text {
+  font-size: 12px;
+  font-weight: bold;
+  color: blue;
+  background: white;
+  padding: 2px 4px;
+  border-radius: 3px;
+  border: 1px solid #ccc;
+  white-space: nowrap;
 }
 
-.diamond-icon {
-  width: 16px;
-  height: 16px;
-  transform: rotate(45deg);
-  background: blue;
-  border: 1px solid darkblue;
-  border-radius: 2px;
-}
-
-#legend {
+.legend {
   position: absolute;
-  bottom: 20px;
-  left: 10px;
+  top: 10px;
+  right: 10px;
   background: white;
   padding: 10px;
+  font-size: 12px;
+  line-height: 1.4;
   border: 1px solid #ccc;
-  font-size: 14px;
+  border-radius: 4px;
   z-index: 999;
-  max-height: 200px;
-  overflow-y: auto;
 }
 
-#legend h4 {
+.legend h4 {
   margin: 0 0 5px;
-  font-weight: bold;
+  font-size: 13px;
 }
 
-#legend-items div {
-  display: flex;
-  align-items: center;
-  margin-bottom: 3px;
-}
-
-#legend-items span {
+.legend div span {
   display: inline-block;
-  width: 16px;
-  height: 16px;
-  margin-right: 6px;
-  border: 1px solid #999;
+  width: 14px;
+  height: 14px;
+  margin-right: 5px;
+  vertical-align: middle;
+  border: 1px solid #555;
 }
 
-#controls {
+#bottom-controls {
+  position: absolute;
+  bottom: 10px;
+  right: 10px;
+  background: white;
+  padding: 8px;
+  border-radius: 4px;
+  font-size: 13px;
+  border: 1px solid #ccc;
+  z-index: 999;
+}
+
+#bottom-controls select,
+#bottom-controls button {
+  margin-top: 5px;
+  font-size: 13px;
+  width: 100%;
+}
+
+#sidebar {
   position: absolute;
   top: 10px;
   left: 10px;
-  background: rgba(255, 255, 255, 0.9);
-  padding: 6px;
+  width: 250px;
+  max-height: 300px;
+  overflow-y: auto;
+  background: white;
+  padding: 10px;
+  font-size: 13px;
+  border: 1px solid #ccc;
   border-radius: 4px;
+  z-index: 999;
+}
+
+#coord-box {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  padding: 5px 10px;
+  background: rgba(255, 255, 255, 0.9);
+  font-family: monospace;
+  font-size: 12px;
   z-index: 1000;
+  border-top-right-radius: 4px;
+  border-top: 1px solid #ccc;
+  border-right: 1px solid #ccc;
 }
 
 .leaflet-control-custom {
-  background: white;
-  padding: 4px 8px;
+  background-color: white;
+  padding: 4px 6px;
   font-size: 18px;
-  line-height: 24px;
-  box-shadow: 0 1px 5px rgba(0,0,0,0.65);
+  text-align: center;
   border-radius: 4px;
+  box-shadow: 0 0 3px rgba(0,0,0,0.3);
 }
