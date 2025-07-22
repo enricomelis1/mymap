@@ -1,57 +1,22 @@
 <!DOCTYPE html>
 <html lang="it">
 <head>
-  <meta charset="utf-8" />
+  <meta charset="UTF-8" />
   <title>Il mio WebGIS</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  
   <!-- Leaflet CSS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  
+  <!-- Custom CSS -->
   <link rel="stylesheet" href="style.css" />
-  <style>
-    /* Stile per i rombi blu */
-    .diamond-marker {
-      width: 16px;
-      height: 16px;
-      background: blue;
-      transform: rotate(45deg);
-      border-radius: 2px;
-      border: 1px solid white;
-    }
-
-    /* Stile legenda e pannelli */
-    #legend {
-      position: absolute;
-      bottom: 10px;
-      left: 10px;
-      background: white;
-      padding: 10px;
-      border-radius: 5px;
-      font-family: Arial, sans-serif;
-      font-size: 14px;
-      max-height: 180px;
-      overflow-y: auto;
-      box-shadow: 0 0 6px rgba(0,0,0,0.3);
-      z-index: 1000;
-    }
-
-    #filters-container {
-      position: absolute;
-      bottom: 10px;
-      right: 10px;
-      background: white;
-      padding: 10px;
-      border-radius: 5px;
-      font-family: Arial, sans-serif;
-      font-size: 14px;
-      box-shadow: 0 0 6px rgba(0,0,0,0.3);
-      z-index: 1000;
-    }
-  </style>
 </head>
 <body>
-  <div id="map" style="height: 100vh;"></div>
+
+  <div id="map"></div>
 
   <div id="legend"></div>
+
   <div id="filters-container">
     <label for="soilFilter">Filtra suolo:</label>
     <select id="soilFilter">
@@ -62,11 +27,12 @@
 
   <!-- Leaflet JS -->
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-  <script src="https://unpkg.com/dom-to-image-more@2.9.0/dist/dom-to-image-more.min.js"></script>
+  
+  <!-- dom-to-image per esportazione PNG -->
+  <script src="https://cdn.jsdelivr.net/npm/dom-to-image-more@2.10.0/src/dom-to-image-more.min.js"></script>
 
   <script>
-    // Inizializza mappa
-    const map = L.map('map').setView([39.2, 8.6], 8);
+    const map = L.map('map');
 
     // Basemaps
     const baseMaps = {
@@ -78,85 +44,83 @@
         attribution: '© Google Satellite'
       })
     };
-    baseMaps["Satellite"].addTo(map); // basemap di default
+    baseMaps["Satellite"].addTo(map);
 
-    // Layer container
+    // Layers container
     let dryadLayer, suoliLayer;
 
-    // Funzione per stile suoli con colori dinamici
+    // Color map per SIGLA_PEDO
+    const colorMap = {
+      'A': '#1f78b4',
+      'B': '#33a02c',
+      'C': '#e31a1c',
+      'D': '#ff7f00',
+      'E': '#6a3d9a',
+      'F': '#b15928'
+    };
+
+    // Style poligoni suoli
     function styleSuoli(feature) {
-      const colors = {
-        'A': '#1f78b4',
-        'B': '#33a02c',
-        'C': '#e31a1c',
-        'D': '#ff7f00',
-        'E': '#6a3d9a',
-        'F': '#b15928'
-      };
       return {
-        fillColor: colors[feature.properties.SIGLA_PEDO] || '#cccccc',
+        fillColor: colorMap[feature.properties.SIGLA_PEDO] || '#ccc',
         weight: 1,
-        opacity: 1,
         color: 'black',
         fillOpacity: 0.7
       };
     }
 
-    // Caricamento Dryad
+    // Carica Dryad
     fetch('data/dryad.geojson')
       .then(res => res.json())
       .then(dryadData => {
         dryadLayer = L.geoJSON(dryadData, {
-          pointToLayer: function (feature, latlng) {
-            return L.marker(latlng, {
-              icon: L.divIcon({
-                className: 'diamond-marker',
-                iconSize: [16, 16],
-                iconAnchor: [8, 8]
-              })
-            });
-          },
-          onEachFeature: function (feature, layer) {
-            if (feature.properties) {
-              // Popup con TUTTI gli attributi
+          pointToLayer: (feature, latlng) => L.marker(latlng, {
+            icon: L.divIcon({
+              className: 'diamond-marker',
+              iconSize: [16,16],
+              iconAnchor: [8,8]
+            })
+          }),
+          onEachFeature: (feature, layer) => {
+            if(feature.properties) {
               const popupContent = Object.entries(feature.properties)
-                .map(([k, v]) => `<strong>${k}</strong>: ${v}`)
+                .map(([k,v]) => `<strong>${k}</strong>: ${v}`)
                 .join('<br>');
               layer.bindPopup(popupContent);
 
-              // Tooltip con solo NAME (etichetta)
+              // Tooltip con NAME visibile solo zoom 18+
               layer.bindTooltip(feature.properties.NAME, { permanent: true, direction: 'right' });
 
-              // Controllo zoom per tooltip
               function updateTooltip() {
-                if (map.getZoom() >= 18) {
-                  layer.openTooltip();
-                } else {
-                  layer.closeTooltip();
-                }
+                if(map.getZoom() >= 18) layer.openTooltip();
+                else layer.closeTooltip();
               }
               map.on('zoomend', updateTooltip);
               updateTooltip();
             }
           }
-        }).addTo(map);
+        });
+        addLayerControl();
+        dryadLayer.addTo(map);
         fitMapToLayers();
       });
 
-    // Caricamento Suoli
+    // Carica Suoli
     fetch('data/suoli.geojson')
       .then(res => res.json())
       .then(suoliData => {
         suoliLayer = L.geoJSON(suoliData, {
           style: styleSuoli,
-          onEachFeature: function(feature, layer) {
-            if (feature.properties && feature.properties.SIGLA_PEDO) {
+          onEachFeature: (feature, layer) => {
+            if(feature.properties && feature.properties.SIGLA_PEDO) {
               layer.bindPopup(`<strong>SIGLA_PEDO</strong>: ${feature.properties.SIGLA_PEDO}`);
             }
           }
-        }).addTo(map);
+        });
+        addLayerControl();
+        suoliLayer.addTo(map);
 
-        // Costruzione filtro dinamico su SIGLA_PEDO
+        // Filtra SIGLA_PEDO
         const soilFilter = document.getElementById('soilFilter');
         const uniqueSuoli = [...new Set(suoliData.features.map(f => f.properties.SIGLA_PEDO))].sort();
         uniqueSuoli.forEach(val => {
@@ -172,19 +136,31 @@
           suoliLayer = L.geoJSON(suoliData, {
             style: styleSuoli,
             filter: f => val === 'all' ? true : f.properties.SIGLA_PEDO === val,
-            onEachFeature: function(feature, layer) {
-              if (feature.properties && feature.properties.SIGLA_PEDO) {
+            onEachFeature: (feature, layer) => {
+              if(feature.properties && feature.properties.SIGLA_PEDO) {
                 layer.bindPopup(`<strong>SIGLA_PEDO</strong>: ${feature.properties.SIGLA_PEDO}`);
               }
             }
           }).addTo(map);
+          addLayerControl();
+          fitMapToLayers();
         });
 
-        fitMapToLayers();
         createLegend(uniqueSuoli);
+        fitMapToLayers();
       });
 
-    // Funzione per fit bounds sui layer caricati
+    // Layer Control
+    let layerControl;
+    function addLayerControl() {
+      if(layerControl) layerControl.remove();
+      layerControl = L.control.layers(baseMaps, {
+        "Dryad": dryadLayer,
+        "Suoli": suoliLayer
+      }, {position: 'topright'}).addTo(map);
+    }
+
+    // Fit bounds
     function fitMapToLayers() {
       const group = L.featureGroup();
       if(dryadLayer) group.addLayer(dryadLayer);
@@ -194,38 +170,32 @@
       }
     }
 
-    // Funzione per creare legenda automatica
+    // Crea legenda
     function createLegend(values) {
       const legend = document.getElementById('legend');
-      const colors = {
-        'A': '#1f78b4',
-        'B': '#33a02c',
-        'C': '#e31a1c',
-        'D': '#ff7f00',
-        'E': '#6a3d9a',
-        'F': '#b15928'
-      };
       legend.innerHTML = '<strong>Legenda SIGLA_PEDO</strong><br>';
       values.forEach(v => {
-        const c = colors[v] || '#cccccc';
+        const c = colorMap[v] || '#ccc';
         legend.innerHTML += `<div><span style="display:inline-block;width:20px;height:12px;background:${c};margin-right:8px;"></span>${v}</div>`;
       });
     }
 
     // Export PNG
     document.getElementById('exportBtn').onclick = () => {
-      domtoimage.toPng(document.getElementById('map'))
-        .then(dataUrl => {
+      domtoimage.toBlob(document.getElementById('map'))
+        .then(blob => {
+          const url = URL.createObjectURL(blob);
           const link = document.createElement('a');
+          link.href = url;
           link.download = 'mappa.png';
-          link.href = dataUrl;
+          document.body.appendChild(link);
           link.click();
+          link.remove();
+          URL.revokeObjectURL(url);
         })
-        .catch(error => {
-          alert('Errore nell\'esportazione PNG');
-          console.error(error);
-        });
+        .catch(e => alert('Errore esportazione: ' + e));
     };
   </script>
+
 </body>
 </html>
