@@ -3,39 +3,66 @@
 <head>
   <meta charset="utf-8" />
   <title>Il mio WebGIS</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <!-- Leaflet CSS -->
-  <link
-    rel="stylesheet"
-    href="https://unpkg.com/leaflet/dist/leaflet.css"
-  />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
   <link rel="stylesheet" href="style.css" />
+  <style>
+    /* Stile per i rombi blu */
+    .diamond-marker {
+      width: 16px;
+      height: 16px;
+      background: blue;
+      transform: rotate(45deg);
+      border-radius: 2px;
+      border: 1px solid white;
+    }
+
+    /* Stile legenda e pannelli */
+    #legend {
+      position: absolute;
+      bottom: 10px;
+      left: 10px;
+      background: white;
+      padding: 10px;
+      border-radius: 5px;
+      font-family: Arial, sans-serif;
+      font-size: 14px;
+      max-height: 180px;
+      overflow-y: auto;
+      box-shadow: 0 0 6px rgba(0,0,0,0.3);
+      z-index: 1000;
+    }
+
+    #filters-container {
+      position: absolute;
+      bottom: 10px;
+      right: 10px;
+      background: white;
+      padding: 10px;
+      border-radius: 5px;
+      font-family: Arial, sans-serif;
+      font-size: 14px;
+      box-shadow: 0 0 6px rgba(0,0,0,0.3);
+      z-index: 1000;
+    }
+  </style>
 </head>
 <body>
-  <div id="map"></div>
+  <div id="map" style="height: 100vh;"></div>
 
-  <!-- Coordinate live -->
-  <div id="coord-box">Lat: — | Lon: — | UTM: —</div>
-
-  <!-- Legenda -->
-  <div class="legend" id="legend">
-    <h4>Legenda Suoli (SIGLA_PEDO)</h4>
-    <!-- Riempito da JS -->
-  </div>
-
-  <!-- Controlli in basso a destra -->
-  <div id="bottom-controls">
+  <div id="legend"></div>
+  <div id="filters-container">
+    <label for="soilFilter">Filtra suolo:</label>
     <select id="soilFilter">
-      <option value="all">Tutti i suoli</option>
-      <!-- Riempito da JS -->
+      <option value="all">Tutti</option>
     </select>
-    <button id="exportPng">Esporta PNG</button>
+    <button id="exportBtn">Esporta PNG</button>
   </div>
 
   <!-- Leaflet JS -->
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-  <script src="https://unpkg.com/dom-to-image-more@2.9.0/src/dom-to-image-more.min.js"></script>
+  <script src="https://unpkg.com/dom-to-image-more@2.9.0/dist/dom-to-image-more.min.js"></script>
 
   <script>
     // Inizializza mappa
@@ -51,242 +78,154 @@
         attribution: '© Google Satellite'
       })
     };
-    baseMaps["Satellite"].addTo(map);
+    baseMaps["Satellite"].addTo(map); // basemap di default
 
-    // Funzione per creare icona rombo blu con dimensione variabile
-    function createDiamondIcon(size) {
-      const svg = `
-        <svg width="${size}" height="${size}" viewBox="0 0 24 24" >
-          <polygon points="12,2 22,12 12,22 2,12" fill="blue" stroke="white" stroke-width="1"/>
-        </svg>`;
-      return L.divIcon({
-        className: "",
-        html: svg,
-        iconSize: [size, size],
-        iconAnchor: [size / 2, size / 2]
-      });
-    }
+    // Layer container
+    let dryadLayer, suoliLayer;
 
-    // Layer dryad (punti)
-    let dryadLayer;
-    fetch('data/dryad.geojson')
-      .then(res => res.json())
-      .then(data => {
-        dryadLayer = L.geoJSON(data, {
-          pointToLayer: (feature, latlng) => {
-            // Dimensione icona in base allo zoom iniziale
-            const zoom = map.getZoom();
-            const size = Math.min(40, Math.max(8, zoom * 2.5));
-            return L.marker(latlng, { icon: createDiamondIcon(size) });
-          },
-          onEachFeature: (feature, layer) => {
-            if (feature.properties?.NAME) {
-              layer.bindPopup(`<strong>${feature.properties.NAME}</strong>`);
-            }
-          }
-        }).addTo(map);
-      });
-
-    // Aggiorna dimensioni icone dryad con zoom
-    map.on('zoomend', () => {
-      if (!dryadLayer) return;
-      const zoom = map.getZoom();
-      const size = Math.min(40, Math.max(8, zoom * 2.5));
-      dryadLayer.eachLayer(marker => {
-        marker.setIcon(createDiamondIcon(size));
-      });
-      updateDryadLabelsVisibility();
-    });
-
-    // Etichette dinamiche dryad (visibili solo da zoom 18 a 22)
-    let dryadLabels = [];
-    function updateDryadLabelsVisibility() {
-      const zoom = map.getZoom();
-      dryadLabels.forEach(label => {
-        if (zoom >= 18 && zoom <= 22) {
-          map.addLayer(label);
-        } else {
-          map.removeLayer(label);
-        }
-      });
-    }
-
-    // Caricamento etichette dryad
-    fetch('data/dryad.geojson')
-      .then(res => res.json())
-      .then(data => {
-        dryadLabels = data.features.map(f => {
-          const latlng = [f.geometry.coordinates[1], f.geometry.coordinates[0]];
-          const label = L.marker(latlng, {
-            icon: L.divIcon({
-              className: 'label-text',
-              html: f.properties.NAME || '',
-              iconSize: [100, 20],
-              iconAnchor: [-20, 10]
-            }),
-            interactive: false
-          });
-          return label;
-        });
-        updateDryadLabelsVisibility();
-      });
-
-    // Layer suoli (poligoni)
-    let suoliLayer;
-    let uniqueSuoli = new Set();
-
-    // Stile dinamico per suoli in base a SIGLA_PEDO
+    // Funzione per stile suoli con colori dinamici
     function styleSuoli(feature) {
-      const val = feature.properties.SIGLA_PEDO || 'ND';
-      const color = colorFromValue(val);
+      const colors = {
+        'A': '#1f78b4',
+        'B': '#33a02c',
+        'C': '#e31a1c',
+        'D': '#ff7f00',
+        'E': '#6a3d9a',
+        'F': '#b15928'
+      };
       return {
-        fillColor: color,
+        fillColor: colors[feature.properties.SIGLA_PEDO] || '#cccccc',
         weight: 1,
-        color: '#555',
-        fillOpacity: 0.6
+        opacity: 1,
+        color: 'black',
+        fillOpacity: 0.7
       };
     }
 
-    // Colori semplici per suoli
-    const colorPalette = [
-      '#e6194b', '#3cb44b', '#ffe119', '#4363d8',
-      '#f58231', '#911eb4', '#46f0f0', '#f032e6',
-      '#bcf60c', '#fabebe', '#008080', '#e6beff',
-      '#9a6324', '#fffac8', '#800000', '#aaffc3',
-      '#808000', '#ffd8b1', '#000075', '#808080'
-    ];
-    const valToColor = {};
-    function colorFromValue(val) {
-      if (!valToColor[val]) {
-        const idx = Object.keys(valToColor).length % colorPalette.length;
-        valToColor[val] = colorPalette[idx];
-      }
-      return valToColor[val];
-    }
+    // Caricamento Dryad
+    fetch('data/dryad.geojson')
+      .then(res => res.json())
+      .then(dryadData => {
+        dryadLayer = L.geoJSON(dryadData, {
+          pointToLayer: function (feature, latlng) {
+            return L.marker(latlng, {
+              icon: L.divIcon({
+                className: 'diamond-marker',
+                iconSize: [16, 16],
+                iconAnchor: [8, 8]
+              })
+            });
+          },
+          onEachFeature: function (feature, layer) {
+            if (feature.properties) {
+              // Popup con TUTTI gli attributi
+              const popupContent = Object.entries(feature.properties)
+                .map(([k, v]) => `<strong>${k}</strong>: ${v}`)
+                .join('<br>');
+              layer.bindPopup(popupContent);
 
+              // Tooltip con solo NAME (etichetta)
+              layer.bindTooltip(feature.properties.NAME, { permanent: true, direction: 'right' });
+
+              // Controllo zoom per tooltip
+              function updateTooltip() {
+                if (map.getZoom() >= 18) {
+                  layer.openTooltip();
+                } else {
+                  layer.closeTooltip();
+                }
+              }
+              map.on('zoomend', updateTooltip);
+              updateTooltip();
+            }
+          }
+        }).addTo(map);
+        fitMapToLayers();
+      });
+
+    // Caricamento Suoli
     fetch('data/suoli.geojson')
       .then(res => res.json())
-      .then(data => {
-        // Estrai valori unici SIGLA_PEDO
-        data.features.forEach(f => {
-          if (f.properties?.SIGLA_PEDO) uniqueSuoli.add(f.properties.SIGLA_PEDO);
-        });
-
-        // Crea layer poligoni suoli
-        suoliLayer = L.geoJSON(data, {
+      .then(suoliData => {
+        suoliLayer = L.geoJSON(suoliData, {
           style: styleSuoli,
-          onEachFeature: (feature, layer) => {
-            if (feature.properties) {
-              layer.bindPopup(Object.entries(feature.properties).map(([k,v]) => `<strong>${k}</strong>: ${v}`).join('<br>'));
+          onEachFeature: function(feature, layer) {
+            if (feature.properties && feature.properties.SIGLA_PEDO) {
+              layer.bindPopup(`<strong>SIGLA_PEDO</strong>: ${feature.properties.SIGLA_PEDO}`);
             }
           }
         }).addTo(map);
 
-        buildLegend();
-        buildFilterOptions();
-        fitMapBounds();
-      });
-
-    // Fit map sui layer
-    function fitMapBounds() {
-      const group = L.featureGroup([]);
-      if (suoliLayer) group.addLayer(suoliLayer);
-      if (dryadLayer) group.addLayer(dryadLayer);
-      if (group.getLayers().length > 0) map.fitBounds(group.getBounds(), {padding: [20,20]});
-    }
-
-    // Costruisce legenda dai valori unici SIGLA_PEDO
-    function buildLegend() {
-      const legendDiv = document.getElementById('legend');
-      legendDiv.innerHTML = '<h4>Legenda Suoli (SIGLA_PEDO)</h4>';
-      uniqueSuoli.forEach(val => {
-        const color = colorFromValue(val);
-        const item = document.createElement('div');
-        item.innerHTML = `<span style="background:${color}"></span> ${val}`;
-        legendDiv.appendChild(item);
-      });
-    }
-
-    // Costruisce opzioni filtro
-    function buildFilterOptions() {
-      const select = document.getElementById('soilFilter');
-      uniqueSuoli.forEach(val => {
-        const option = document.createElement('option');
-        option.value = val;
-        option.textContent = val;
-        select.appendChild(option);
-      });
-    }
-
-    // Filtro suoli
-    document.getElementById('soilFilter').addEventListener('change', e => {
-      const val = e.target.value;
-      if (!suoliLayer) return;
-      if (val === 'all') {
-        suoliLayer.setStyle(styleSuoli);
-        suoliLayer.eachLayer(layer => layer.addTo(map));
-      } else {
-        suoliLayer.eachLayer(layer => {
-          if (layer.feature.properties.SIGLA_PEDO === val) {
-            layer.setStyle(styleSuoli(layer.feature));
-            layer.addTo(map);
-          } else {
-            map.removeLayer(layer);
-          }
+        // Costruzione filtro dinamico su SIGLA_PEDO
+        const soilFilter = document.getElementById('soilFilter');
+        const uniqueSuoli = [...new Set(suoliData.features.map(f => f.properties.SIGLA_PEDO))].sort();
+        uniqueSuoli.forEach(val => {
+          const opt = document.createElement('option');
+          opt.value = val;
+          opt.textContent = val;
+          soilFilter.appendChild(opt);
         });
-      }
-      fitMapBounds();
-    });
 
-    // Export PNG bottone
-    document.getElementById('exportPng').addEventListener('click', () => {
-      const mapContainer = document.getElementById('map');
-      domtoimage.toPng(mapContainer)
+        soilFilter.addEventListener('change', () => {
+          const val = soilFilter.value;
+          suoliLayer.clearLayers();
+          suoliLayer = L.geoJSON(suoliData, {
+            style: styleSuoli,
+            filter: f => val === 'all' ? true : f.properties.SIGLA_PEDO === val,
+            onEachFeature: function(feature, layer) {
+              if (feature.properties && feature.properties.SIGLA_PEDO) {
+                layer.bindPopup(`<strong>SIGLA_PEDO</strong>: ${feature.properties.SIGLA_PEDO}`);
+              }
+            }
+          }).addTo(map);
+        });
+
+        fitMapToLayers();
+        createLegend(uniqueSuoli);
+      });
+
+    // Funzione per fit bounds sui layer caricati
+    function fitMapToLayers() {
+      const group = L.featureGroup();
+      if(dryadLayer) group.addLayer(dryadLayer);
+      if(suoliLayer) group.addLayer(suoliLayer);
+      if(group.getLayers().length) {
+        map.fitBounds(group.getBounds().pad(0.1));
+      }
+    }
+
+    // Funzione per creare legenda automatica
+    function createLegend(values) {
+      const legend = document.getElementById('legend');
+      const colors = {
+        'A': '#1f78b4',
+        'B': '#33a02c',
+        'C': '#e31a1c',
+        'D': '#ff7f00',
+        'E': '#6a3d9a',
+        'F': '#b15928'
+      };
+      legend.innerHTML = '<strong>Legenda SIGLA_PEDO</strong><br>';
+      values.forEach(v => {
+        const c = colors[v] || '#cccccc';
+        legend.innerHTML += `<div><span style="display:inline-block;width:20px;height:12px;background:${c};margin-right:8px;"></span>${v}</div>`;
+      });
+    }
+
+    // Export PNG
+    document.getElementById('exportBtn').onclick = () => {
+      domtoimage.toPng(document.getElementById('map'))
         .then(dataUrl => {
           const link = document.createElement('a');
           link.download = 'mappa.png';
           link.href = dataUrl;
           link.click();
         })
-        .catch(error => alert('Errore esportazione PNG: ' + error));
-    });
-
-    // Mostra coordinate live (lat, lon, UTM)
-    const coordBox = document.getElementById('coord-box');
-    function toUTM(lat, lon) {
-      // Conversione semplice WGS84 -> UTM zona 32N (Sardegna)
-      // Per uso preciso meglio librerie esterne, ma questa è una stima
-      const zone = 32;
-      const latRad = lat * Math.PI/180;
-      const lonRad = lon * Math.PI/180;
-      const lonOrigin = (zone - 1)*6 - 180 + 3;
-      const lonOriginRad = lonOrigin * Math.PI/180;
-      const a = 6378137.0;
-      const e = 0.081819191;
-      const k0 = 0.9996;
-      const N = a / Math.sqrt(1 - e*e * Math.sin(latRad)*Math.sin(latRad));
-      const T = Math.tan(latRad)*Math.tan(latRad);
-      const C = (e*e)/(1 - e*e) * Math.cos(latRad)*Math.cos(latRad);
-      const A = Math.cos(latRad)*(lonRad - lonOriginRad);
-      const M = a*((1 - e*e/4 - 3*e*e*e*e/64 - 5*e*e*e*e*e*e/256)*latRad
-              - (3*e*e/8 + 3*e*e*e*e/32 + 45*e*e*e*e*e*e/1024)*Math.sin(2*latRad)
-              + (15*e*e*e*e/256 + 45*e*e*e*e*e*e/1024)*Math.sin(4*latRad)
-              - (35*e*e*e*e*e*e/3072)*Math.sin(6*latRad));
-      const easting = k0*N*(A + (1 - T + C)*A*A*A/6
-                  + (5 - 18*T + T*T + 72*C - 58*(e*e)/(1 - e*e))*A*A*A*A*A/120) + 500000.0;
-      const northing = k0*(M + N*Math.tan(latRad)*(A*A/2
-                  + (5 - T + 9*C + 4*C*C)*A*A*A*A/24
-                  + (61 - 58*T + T*T + 600*C - 330*(e*e)/(1 - e*e))*A*A*A*A*A*A/720));
-      return {easting: Math.round(easting), northing: Math.round(northing), zone: zone};
-    }
-
-    map.on('mousemove', e => {
-      const lat = e.latlng.lat.toFixed(5);
-      const lon = e.latlng.lng.toFixed(5);
-      const utm = toUTM(e.latlng.lat, e.latlng.lng);
-      coordBox.textContent = `Lat: ${lat} | Lon: ${lon} | UTM: ${utm.easting}, ${utm.northing} (Zone ${utm.zone}N)`;
-    });
-
+        .catch(error => {
+          alert('Errore nell\'esportazione PNG');
+          console.error(error);
+        });
+    };
   </script>
 </body>
 </html>
