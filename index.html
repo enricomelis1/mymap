@@ -1,259 +1,292 @@
 <!DOCTYPE html>
-<html>
+<html lang="it">
 <head>
   <meta charset="utf-8" />
-  <title>WebGIS suoli + dryad</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <title>Il mio WebGIS</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  
+  <!-- Leaflet CSS -->
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet/dist/leaflet.css"
+  />
   <link rel="stylesheet" href="style.css" />
-  <link rel="stylesheet" href="https://unpkg.com/leaflet-draw/dist/leaflet.draw.css" />
 </head>
 <body>
   <div id="map"></div>
 
-  <!-- Controlli in basso a destra -->
-  <div id="bottom-controls">
-    <label for="suoloFilter">Filtro suolo:</label>
-    <select id="suoloFilter">
-      <option value="">Tutti</option>
-    </select>
-    <button id="exportMap">📸 Esporta PNG</button>
-  </div>
+  <!-- Coordinate live -->
+  <div id="coord-box">Lat: — | Lon: — | UTM: —</div>
 
   <!-- Legenda -->
-  <div id="legend" class="legend">
-    <h4>Legenda suoli</h4>
-    <div id="legend-items"></div>
+  <div class="legend" id="legend">
+    <h4>Legenda Suoli (SIGLA_PEDO)</h4>
+    <!-- Riempito da JS -->
   </div>
 
-  <!-- Pannello laterale -->
-  <div id="sidebar">
-    <h4>Dettagli</h4>
-    <div id="info-panel">Clicca su una feature...</div>
+  <!-- Controlli in basso a destra -->
+  <div id="bottom-controls">
+    <select id="soilFilter">
+      <option value="all">Tutti i suoli</option>
+      <!-- Riempito da JS -->
+    </select>
+    <button id="exportPng">Esporta PNG</button>
   </div>
 
-
-  <!-- Coordinate -->
-  <div id="coord-box"></div>
-
+  <!-- Leaflet JS -->
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-  <script src="https://unpkg.com/leaflet-draw/dist/leaflet.draw.js"></script>
-  <script src="https://unpkg.com/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/proj4@2.9.1/dist/proj4.min.js"></script>
+  <script src="https://unpkg.com/dom-to-image-more@2.9.0/src/dom-to-image-more.min.js"></script>
 
   <script>
-    const map = L.map('map');
+    // Inizializza mappa
+    const map = L.map('map').setView([39.2, 8.6], 8);
 
-    const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap' });
-    const satellite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { attribution: '© Esri' });
-    const topo = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', { attribution: '© OpenTopoMap' });
-    osm.addTo(map);
-
-    const dryadLayer = L.layerGroup();
-    const suoliLayer = L.geoJSON(null);
-    const lucasLayer = L.layerGroup();
-    const labelLayer = L.layerGroup();
-
+    // Basemaps
     const baseMaps = {
-      "OpenStreetMap": osm,
-      "Satellite": satellite,
-      "Topografica": topo
+      "OpenStreetMap": L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap contributors'
+      }),
+      "Satellite": L.tileLayer('https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
+        subdomains:['mt0','mt1','mt2','mt3'],
+        attribution: '© Google Satellite'
+      })
     };
+    baseMaps["Satellite"].addTo(map);
 
-    const overlays = {
-      "Dryad": dryadLayer,
-      "Suoli": suoliLayer,
-      "Etichette Dryad": labelLayer,
-      "Griglia LUCAS": lucasLayer
-    };
+    // Funzione per creare icona rombo blu con dimensione variabile
+    function createDiamondIcon(size) {
+      const svg = `
+        <svg width="${size}" height="${size}" viewBox="0 0 24 24" >
+          <polygon points="12,2 22,12 12,22 2,12" fill="blue" stroke="white" stroke-width="1"/>
+        </svg>`;
+      return L.divIcon({
+        className: "",
+        html: svg,
+        iconSize: [size, size],
+        iconAnchor: [size / 2, size / 2]
+      });
+    }
 
-    L.control.layers(baseMaps, overlays).addTo(map);
-
-    let boundsArray = [];
-    const colorMap = {};
-    let labelFeatures = [];
-
+    // Layer dryad (punti)
+    let dryadLayer;
     fetch('data/dryad.geojson')
       .then(res => res.json())
       .then(data => {
-        const layer = L.geoJSON(data, {
+        dryadLayer = L.geoJSON(data, {
           pointToLayer: (feature, latlng) => {
-            return L.circleMarker(latlng, {
-              radius: getRadiusForZoom(map.getZoom()),
-              fillColor: "#0077ff",
-              color: "#fff",
-              weight: 1,
-              opacity: 1,
-              fillOpacity: 0.9
-            });
+            // Dimensione icona in base allo zoom iniziale
+            const zoom = map.getZoom();
+            const size = Math.min(40, Math.max(8, zoom * 2.5));
+            return L.marker(latlng, { icon: createDiamondIcon(size) });
           },
           onEachFeature: (feature, layer) => {
-            if (feature.properties) {
-              layer.bindPopup(Object.entries(feature.properties).map(([k, v]) => `<strong>${k}</strong>: ${v}`).join('<br>'));
-              layer.on('click', () => updateSidebar(feature.properties));
-              const label = L.marker(layer.getLatLng(), {
-                icon: L.divIcon({
-                  className: 'label-text',
-                  html: `<span>${feature.properties.NAME || ''}</span>`,
-                  iconSize: [100, 20]
-                }),
-                interactive: false
-              });
-              label.__featureZoom = 18;
-              label.__featureLatLng = layer.getLatLng();
-              labelFeatures.push(label);
+            if (feature.properties?.NAME) {
+              layer.bindPopup(`<strong>${feature.properties.NAME}</strong>`);
             }
           }
-        });
-        dryadLayer.addLayer(layer);
-        dryadLayer.addTo(map);
-        boundsArray.push(layer.getBounds());
-        fitAllBounds();
-        updateLabels();
+        }).addTo(map);
       });
+
+    // Aggiorna dimensioni icone dryad con zoom
+    map.on('zoomend', () => {
+      if (!dryadLayer) return;
+      const zoom = map.getZoom();
+      const size = Math.min(40, Math.max(8, zoom * 2.5));
+      dryadLayer.eachLayer(marker => {
+        marker.setIcon(createDiamondIcon(size));
+      });
+      updateDryadLabelsVisibility();
+    });
+
+    // Etichette dinamiche dryad (visibili solo da zoom 18 a 22)
+    let dryadLabels = [];
+    function updateDryadLabelsVisibility() {
+      const zoom = map.getZoom();
+      dryadLabels.forEach(label => {
+        if (zoom >= 18 && zoom <= 22) {
+          map.addLayer(label);
+        } else {
+          map.removeLayer(label);
+        }
+      });
+    }
+
+    // Caricamento etichette dryad
+    fetch('data/dryad.geojson')
+      .then(res => res.json())
+      .then(data => {
+        dryadLabels = data.features.map(f => {
+          const latlng = [f.geometry.coordinates[1], f.geometry.coordinates[0]];
+          const label = L.marker(latlng, {
+            icon: L.divIcon({
+              className: 'label-text',
+              html: f.properties.NAME || '',
+              iconSize: [100, 20],
+              iconAnchor: [-20, 10]
+            }),
+            interactive: false
+          });
+          return label;
+        });
+        updateDryadLabelsVisibility();
+      });
+
+    // Layer suoli (poligoni)
+    let suoliLayer;
+    let uniqueSuoli = new Set();
+
+    // Stile dinamico per suoli in base a SIGLA_PEDO
+    function styleSuoli(feature) {
+      const val = feature.properties.SIGLA_PEDO || 'ND';
+      const color = colorFromValue(val);
+      return {
+        fillColor: color,
+        weight: 1,
+        color: '#555',
+        fillOpacity: 0.6
+      };
+    }
+
+    // Colori semplici per suoli
+    const colorPalette = [
+      '#e6194b', '#3cb44b', '#ffe119', '#4363d8',
+      '#f58231', '#911eb4', '#46f0f0', '#f032e6',
+      '#bcf60c', '#fabebe', '#008080', '#e6beff',
+      '#9a6324', '#fffac8', '#800000', '#aaffc3',
+      '#808000', '#ffd8b1', '#000075', '#808080'
+    ];
+    const valToColor = {};
+    function colorFromValue(val) {
+      if (!valToColor[val]) {
+        const idx = Object.keys(valToColor).length % colorPalette.length;
+        valToColor[val] = colorPalette[idx];
+      }
+      return valToColor[val];
+    }
 
     fetch('data/suoli.geojson')
       .then(res => res.json())
       .then(data => {
-        const sigle = [...new Set(data.features.map(f => f.properties.SIGLA_PEDO))];
-        sigle.forEach(sigla => colorMap[sigla] = randomColor());
-        updateLegend();
-        populateSuoloFilter(sigle);
-        suoliLayer.addData(data);
-        suoliLayer.setStyle(feature => ({ color: colorMap[feature.properties.SIGLA_PEDO] || '#999', weight: 1, fillOpacity: 0.5 }));
-        suoliLayer.eachLayer(layer => {
-          if (layer.feature && layer.feature.properties) {
-            layer.bindPopup(Object.entries(layer.feature.properties).map(([k, v]) => `<strong>${k}</strong>: ${v}`).join('<br>'));
-            layer.on('click', () => updateSidebar(layer.feature.properties));
+        // Estrai valori unici SIGLA_PEDO
+        data.features.forEach(f => {
+          if (f.properties?.SIGLA_PEDO) uniqueSuoli.add(f.properties.SIGLA_PEDO);
+        });
+
+        // Crea layer poligoni suoli
+        suoliLayer = L.geoJSON(data, {
+          style: styleSuoli,
+          onEachFeature: (feature, layer) => {
+            if (feature.properties) {
+              layer.bindPopup(Object.entries(feature.properties).map(([k,v]) => `<strong>${k}</strong>: ${v}`).join('<br>'));
+            }
           }
-        });
-        suoliLayer.addTo(map);
-        boundsArray.push(suoliLayer.getBounds());
-        fitAllBounds();
+        }).addTo(map);
+
+        buildLegend();
+        buildFilterOptions();
+        fitMapBounds();
       });
 
-    fetch('data/lucas_grid.geojson')
-      .then(res => res.json())
-      .then(data => {
-        const layer = L.geoJSON(data, {
-          style: { color: '#555', weight: 1, dashArray: '2,4', fillOpacity: 0 }
-        });
-        lucasLayer.addLayer(layer);
+    // Fit map sui layer
+    function fitMapBounds() {
+      const group = L.featureGroup([]);
+      if (suoliLayer) group.addLayer(suoliLayer);
+      if (dryadLayer) group.addLayer(dryadLayer);
+      if (group.getLayers().length > 0) map.fitBounds(group.getBounds(), {padding: [20,20]});
+    }
+
+    // Costruisce legenda dai valori unici SIGLA_PEDO
+    function buildLegend() {
+      const legendDiv = document.getElementById('legend');
+      legendDiv.innerHTML = '<h4>Legenda Suoli (SIGLA_PEDO)</h4>';
+      uniqueSuoli.forEach(val => {
+        const color = colorFromValue(val);
+        const item = document.createElement('div');
+        item.innerHTML = `<span style="background:${color}"></span> ${val}`;
+        legendDiv.appendChild(item);
       });
-
-    function fitAllBounds() {
-      if (boundsArray.length > 0) {
-        const all = boundsArray.reduce((a, b) => a.extend(b));
-        map.fitBounds(all);
-      }
     }
 
-    function randomColor() {
-      return '#' + Math.floor(Math.random() * 16777215).toString(16);
-    }
-
-    function updateLegend() {
-      const container = document.getElementById('legend-items');
-      container.innerHTML = '';
-      for (const sigla in colorMap) {
-        const div = document.createElement('div');
-        div.innerHTML = `<span style="background:${colorMap[sigla]}"></span> ${sigla}`;
-        container.appendChild(div);
-      }
-    }
-
-    function populateSuoloFilter(sigle) {
-      const select = document.getElementById('suoloFilter');
-      sigle.sort().forEach(s => {
-        const opt = document.createElement('option');
-        opt.value = s;
-        opt.textContent = s;
-        select.appendChild(opt);
+    // Costruisce opzioni filtro
+    function buildFilterOptions() {
+      const select = document.getElementById('soilFilter');
+      uniqueSuoli.forEach(val => {
+        const option = document.createElement('option');
+        option.value = val;
+        option.textContent = val;
+        select.appendChild(option);
       });
-      select.addEventListener('change', () => {
-        const val = select.value;
+    }
+
+    // Filtro suoli
+    document.getElementById('soilFilter').addEventListener('change', e => {
+      const val = e.target.value;
+      if (!suoliLayer) return;
+      if (val === 'all') {
+        suoliLayer.setStyle(styleSuoli);
+        suoliLayer.eachLayer(layer => layer.addTo(map));
+      } else {
         suoliLayer.eachLayer(layer => {
-          if (!val || layer.feature.properties.SIGLA_PEDO === val) {
-            layer.setStyle({ opacity: 1, fillOpacity: 0.5 });
+          if (layer.feature.properties.SIGLA_PEDO === val) {
+            layer.setStyle(styleSuoli(layer.feature));
+            layer.addTo(map);
           } else {
-            layer.setStyle({ opacity: 0, fillOpacity: 0 });
+            map.removeLayer(layer);
           }
-        });
-      });
-    }
-
-    function updateSidebar(properties) {
-      const container = document.getElementById('info-panel');
-      container.innerHTML = Object.entries(properties).map(([k, v]) => `<strong>${k}</strong>: ${v}`).join('<br>');
-    }
-
-    map.on('zoomend', () => {
-      updateLabels();
-      updatePointSizes();
-    });
-
-    function updateLabels() {
-      labelLayer.clearLayers();
-      const zoom = map.getZoom();
-      if (zoom >= 18) {
-        labelFeatures.forEach(label => {
-          labelLayer.addLayer(L.marker(label.__featureLatLng, label.options));
         });
       }
-    }
-
-    function getRadiusForZoom(zoom) {
-      return Math.max(2, zoom - 8);
-    }
-
-    function updatePointSizes() {
-      dryadLayer.eachLayer(group => {
-        group.eachLayer(layer => {
-          if (layer instanceof L.CircleMarker) {
-            layer.setRadius(getRadiusForZoom(map.getZoom()));
-          }
-        });
-      });
-    }
-
-    const locateBtn = L.control({ position: 'topleft' });
-    locateBtn.onAdd = function () {
-      const div = L.DomUtil.create('div', 'leaflet-bar leaflet-control leaflet-control-custom');
-      div.innerHTML = '📍';
-      div.title = "Trova la mia posizione";
-      div.style.cursor = 'pointer';
-      div.onclick = () => map.locate({ setView: true, maxZoom: 16 });
-      return div;
-    };
-    locateBtn.addTo(map);
-
-    map.on('locationfound', e => {
-      L.circleMarker(e.latlng, {
-        radius: 8,
-        fillColor: "#3388ff",
-        color: "#fff",
-        weight: 2,
-        fillOpacity: 0.8
-      }).addTo(map).bindPopup("Sei qui").openPopup();
+      fitMapBounds();
     });
+
+    // Export PNG bottone
+    document.getElementById('exportPng').addEventListener('click', () => {
+      const mapContainer = document.getElementById('map');
+      domtoimage.toPng(mapContainer)
+        .then(dataUrl => {
+          const link = document.createElement('a');
+          link.download = 'mappa.png';
+          link.href = dataUrl;
+          link.click();
+        })
+        .catch(error => alert('Errore esportazione PNG: ' + error));
+    });
+
+    // Mostra coordinate live (lat, lon, UTM)
+    const coordBox = document.getElementById('coord-box');
+    function toUTM(lat, lon) {
+      // Conversione semplice WGS84 -> UTM zona 32N (Sardegna)
+      // Per uso preciso meglio librerie esterne, ma questa è una stima
+      const zone = 32;
+      const latRad = lat * Math.PI/180;
+      const lonRad = lon * Math.PI/180;
+      const lonOrigin = (zone - 1)*6 - 180 + 3;
+      const lonOriginRad = lonOrigin * Math.PI/180;
+      const a = 6378137.0;
+      const e = 0.081819191;
+      const k0 = 0.9996;
+      const N = a / Math.sqrt(1 - e*e * Math.sin(latRad)*Math.sin(latRad));
+      const T = Math.tan(latRad)*Math.tan(latRad);
+      const C = (e*e)/(1 - e*e) * Math.cos(latRad)*Math.cos(latRad);
+      const A = Math.cos(latRad)*(lonRad - lonOriginRad);
+      const M = a*((1 - e*e/4 - 3*e*e*e*e/64 - 5*e*e*e*e*e*e/256)*latRad
+              - (3*e*e/8 + 3*e*e*e*e/32 + 45*e*e*e*e*e*e/1024)*Math.sin(2*latRad)
+              + (15*e*e*e*e/256 + 45*e*e*e*e*e*e/1024)*Math.sin(4*latRad)
+              - (35*e*e*e*e*e*e/3072)*Math.sin(6*latRad));
+      const easting = k0*N*(A + (1 - T + C)*A*A*A/6
+                  + (5 - 18*T + T*T + 72*C - 58*(e*e)/(1 - e*e))*A*A*A*A*A/120) + 500000.0;
+      const northing = k0*(M + N*Math.tan(latRad)*(A*A/2
+                  + (5 - T + 9*C + 4*C*C)*A*A*A*A/24
+                  + (61 - 58*T + T*T + 600*C - 330*(e*e)/(1 - e*e))*A*A*A*A*A*A/720));
+      return {easting: Math.round(easting), northing: Math.round(northing), zone: zone};
+    }
 
     map.on('mousemove', e => {
       const lat = e.latlng.lat.toFixed(5);
       const lon = e.latlng.lng.toFixed(5);
-      const utm = proj4('EPSG:4326', 'EPSG:32632', [lon, lat]);
-      document.getElementById('coord-box').innerHTML = `Lat: ${lat} | Lon: ${lon} | UTM: ${utm.map(x => x.toFixed(0)).join(', ')}`;
+      const utm = toUTM(e.latlng.lat, e.latlng.lng);
+      coordBox.textContent = `Lat: ${lat} | Lon: ${lon} | UTM: ${utm.easting}, ${utm.northing} (Zone ${utm.zone}N)`;
     });
 
-    document.getElementById('exportMap').onclick = () => {
-      html2canvas(document.getElementById('map')).then(canvas => {
-        const link = document.createElement('a');
-        link.download = 'mappa.png';
-        link.href = canvas.toDataURL();
-        link.click();
-      });
-    };
-
-    map.setView([39.2, 8.6], 8);
   </script>
 </body>
 </html>
