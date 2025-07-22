@@ -1,7 +1,43 @@
 body {
   margin: 0;
+  padding: 0;
 }
 #map {
   height: 100vh;
 }
 
+/* Legenda */
+.legend {
+  position: absolute;
+  bottom: 30px;
+  left: 10px;
+  background: white;
+  padding: 10px;
+  font-size: 14px;
+  border-radius: 5px;
+  box-shadow: 0 0 15px rgba(0,0,0,0.2);
+}
+.legend h4 {
+  margin: 0 0 5px;
+}
+.legend div {
+  display: flex;
+  align-items: center;
+}
+.legend span {
+  width: 20px;
+  height: 10px;
+  margin-right: 8px;
+  display: inline-block;
+}
+
+/* Pulsante GPS */
+.leaflet-control-custom {
+  background-color: white;
+  padding: 6px 10px;
+  font-size: 18px;
+  text-align: center;
+  line-height: 24px;
+  border-radius: 4px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.65);
+}
