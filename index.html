@@ -9,15 +9,16 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet-draw/dist/leaflet.draw.css" />
 </head>
 <body>
-  <div id="controls">
+  <div id="map"></div>
+
+  <!-- Controlli in basso a destra -->
+  <div id="bottom-controls">
     <label for="suoloFilter">Filtro suolo:</label>
     <select id="suoloFilter">
       <option value="">Tutti</option>
     </select>
     <button id="exportMap">📸 Esporta PNG</button>
   </div>
-
-  <div id="map"></div>
 
   <!-- Legenda -->
   <div id="legend" class="legend">
@@ -67,20 +68,24 @@
 
     L.control.layers(baseMaps, overlays).addTo(map);
 
-    const diamondDiv = L.divIcon({
-      className: 'diamond-icon',
-      iconSize: [16, 16],
-      iconAnchor: [8, 8]
-    });
-
     let boundsArray = [];
     const colorMap = {};
+    let labelFeatures = [];
 
     fetch('data/dryad.geojson')
       .then(res => res.json())
       .then(data => {
         const layer = L.geoJSON(data, {
-          pointToLayer: (feature, latlng) => L.marker(latlng, { icon: diamondDiv }),
+          pointToLayer: (feature, latlng) => {
+            return L.circleMarker(latlng, {
+              radius: getRadiusForZoom(map.getZoom()),
+              fillColor: "#0077ff",
+              color: "#fff",
+              weight: 1,
+              opacity: 1,
+              fillOpacity: 0.9
+            });
+          },
           onEachFeature: (feature, layer) => {
             if (feature.properties) {
               layer.bindPopup(Object.entries(feature.properties).map(([k, v]) => `<strong>${k}</strong>: ${v}`).join('<br>'));
@@ -90,9 +95,12 @@
                   className: 'label-text',
                   html: `<span>${feature.properties.NAME || ''}</span>`,
                   iconSize: [100, 20]
-                })
+                }),
+                interactive: false
               });
-              labelLayer.addLayer(label);
+              label.__featureZoom = 18;
+              label.__featureLatLng = layer.getLatLng();
+              labelFeatures.push(label);
             }
           }
         });
@@ -100,6 +108,7 @@
         dryadLayer.addTo(map);
         boundsArray.push(layer.getBounds());
         fitAllBounds();
+        updateLabels();
       });
 
     fetch('data/suoli.geojson')
@@ -175,6 +184,35 @@
     function updateSidebar(properties) {
       const container = document.getElementById('info-panel');
       container.innerHTML = Object.entries(properties).map(([k, v]) => `<strong>${k}</strong>: ${v}`).join('<br>');
+    }
+
+    map.on('zoomend', () => {
+      updateLabels();
+      updatePointSizes();
+    });
+
+    function updateLabels() {
+      labelLayer.clearLayers();
+      const zoom = map.getZoom();
+      if (zoom >= 18) {
+        labelFeatures.forEach(label => {
+          labelLayer.addLayer(L.marker(label.__featureLatLng, label.options));
+        });
+      }
+    }
+
+    function getRadiusForZoom(zoom) {
+      return Math.max(2, zoom - 8);
+    }
+
+    function updatePointSizes() {
+      dryadLayer.eachLayer(group => {
+        group.eachLayer(layer => {
+          if (layer instanceof L.CircleMarker) {
+            layer.setRadius(getRadiusForZoom(map.getZoom()));
+          }
+        });
+      });
     }
 
     const locateBtn = L.control({ position: 'topleft' });
