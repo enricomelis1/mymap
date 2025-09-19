@@ -1,201 +1,71 @@
 <!DOCTYPE html>
 <html lang="it">
 <head>
-  <meta charset="UTF-8" />
-  <title>Il mio WebGIS</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  
-  <!-- Leaflet CSS -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
-  
-  <!-- Custom CSS -->
-  <link rel="stylesheet" href="style.css" />
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Google Sheet + Mappa ArcGIS Responsive</title>
+
+    <!-- ArcGIS Embeddable Components -->
+    <script type="module" src="https://js.arcgis.com/embeddable-components/4.33/arcgis-embeddable-components.esm.js"></script>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+
+        h2 {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        /* Container per layout flessibile */
+        .container {
+            display: flex;
+            flex-wrap: wrap;          /* permette il wrap su schermi piccoli */
+            gap: 20px;
+            justify-content: center;
+        }
+
+        iframe, arcgis-embedded-map {
+            flex: 1 1 45%;            /* occupano circa metà larghezza su desktop */
+            min-width: 300px;         /* non diventano troppo piccoli */
+            height: 60vh;             /* altezza proporzionale alla viewport */
+            border: 1px solid #ccc;
+            border-radius: 8px;
+        }
+
+        /* Piccoli aggiustamenti per mobile */
+        @media (max-width: 800px) {
+            iframe, arcgis-embedded-map {
+                flex: 1 1 100%;       /* elementi uno sotto l’altro */
+                height: 50vh;
+            }
+        }
+    </style>
 </head>
 <body>
 
-  <div id="map"></div>
+    <h2>Campionamenti UNISS</h2>
 
-  <div id="legend"></div>
+    <div class="container">
+        <!-- Google Sheet -->
+        <iframe 
+            src="https://docs.google.com/spreadsheets/d/e/2PACX-1vTq4r2_vznxREmQlNUdx1xVqzoBKgDqbrzGb1-Jk0SeK0-WEW3bIWoJbX9puUgN_sDVW33ah4jTipiq/pubhtml?widget=true&amp;headers=false">
+        </iframe>
 
-  <div id="filters-container">
-    <label for="soilFilter">Filtra suolo:</label>
-    <select id="soilFilter">
-      <option value="all">Tutti</option>
-    </select>
-    <button id="exportBtn">Esporta PNG</button>
-  </div>
-
-  <!-- Leaflet JS -->
-  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-  
-  <!-- dom-to-image per esportazione PNG -->
-  <script src="https://cdn.jsdelivr.net/npm/dom-to-image-more@2.10.0/src/dom-to-image-more.min.js"></script>
-
-  <script>
-    const map = L.map('map');
-
-    // Basemaps
-    const baseMaps = {
-      "OpenStreetMap": L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '© OpenStreetMap contributors'
-      }),
-      "Satellite": L.tileLayer('https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
-        subdomains:['mt0','mt1','mt2','mt3'],
-        attribution: '© Google Satellite'
-      })
-    };
-    baseMaps["Satellite"].addTo(map);
-
-    // Layers container
-    let dryadLayer, suoliLayer;
-
-    // Color map per SIGLA_PEDO
-    const colorMap = {
-      'A': '#1f78b4',
-      'B': '#33a02c',
-      'C': '#e31a1c',
-      'D': '#ff7f00',
-      'E': '#6a3d9a',
-      'F': '#b15928'
-    };
-
-    // Style poligoni suoli
-    function styleSuoli(feature) {
-      return {
-        fillColor: colorMap[feature.properties.SIGLA_PEDO] || '#ccc',
-        weight: 1,
-        color: 'black',
-        fillOpacity: 0.7
-      };
-    }
-
-    // Carica Dryad
-    fetch('data/dryad.geojson')
-      .then(res => res.json())
-      .then(dryadData => {
-        dryadLayer = L.geoJSON(dryadData, {
-          pointToLayer: (feature, latlng) => L.marker(latlng, {
-            icon: L.divIcon({
-              className: 'diamond-marker',
-              iconSize: [16,16],
-              iconAnchor: [8,8]
-            })
-          }),
-          onEachFeature: (feature, layer) => {
-            if(feature.properties) {
-              const popupContent = Object.entries(feature.properties)
-                .map(([k,v]) => `<strong>${k}</strong>: ${v}`)
-                .join('<br>');
-              layer.bindPopup(popupContent);
-
-              // Tooltip con NAME visibile solo zoom 18+
-              layer.bindTooltip(feature.properties.NAME, { permanent: true, direction: 'right' });
-
-              function updateTooltip() {
-                if(map.getZoom() >= 18) layer.openTooltip();
-                else layer.closeTooltip();
-              }
-              map.on('zoomend', updateTooltip);
-              updateTooltip();
-            }
-          }
-        });
-        addLayerControl();
-        dryadLayer.addTo(map);
-        fitMapToLayers();
-      });
-
-    // Carica Suoli
-    fetch('data/suoli.geojson')
-      .then(res => res.json())
-      .then(suoliData => {
-        suoliLayer = L.geoJSON(suoliData, {
-          style: styleSuoli,
-          onEachFeature: (feature, layer) => {
-            if(feature.properties && feature.properties.SIGLA_PEDO) {
-              layer.bindPopup(`<strong>SIGLA_PEDO</strong>: ${feature.properties.SIGLA_PEDO}`);
-            }
-          }
-        });
-        addLayerControl();
-        suoliLayer.addTo(map);
-
-        // Filtra SIGLA_PEDO
-        const soilFilter = document.getElementById('soilFilter');
-        const uniqueSuoli = [...new Set(suoliData.features.map(f => f.properties.SIGLA_PEDO))].sort();
-        uniqueSuoli.forEach(val => {
-          const opt = document.createElement('option');
-          opt.value = val;
-          opt.textContent = val;
-          soilFilter.appendChild(opt);
-        });
-
-        soilFilter.addEventListener('change', () => {
-          const val = soilFilter.value;
-          suoliLayer.clearLayers();
-          suoliLayer = L.geoJSON(suoliData, {
-            style: styleSuoli,
-            filter: f => val === 'all' ? true : f.properties.SIGLA_PEDO === val,
-            onEachFeature: (feature, layer) => {
-              if(feature.properties && feature.properties.SIGLA_PEDO) {
-                layer.bindPopup(`<strong>SIGLA_PEDO</strong>: ${feature.properties.SIGLA_PEDO}`);
-              }
-            }
-          }).addTo(map);
-          addLayerControl();
-          fitMapToLayers();
-        });
-
-        createLegend(uniqueSuoli);
-        fitMapToLayers();
-      });
-
-    // Layer Control
-    let layerControl;
-    function addLayerControl() {
-      if(layerControl) layerControl.remove();
-      layerControl = L.control.layers(baseMaps, {
-        "Dryad": dryadLayer,
-        "Suoli": suoliLayer
-      }, {position: 'topright'}).addTo(map);
-    }
-
-    // Fit bounds
-    function fitMapToLayers() {
-      const group = L.featureGroup();
-      if(dryadLayer) group.addLayer(dryadLayer);
-      if(suoliLayer) group.addLayer(suoliLayer);
-      if(group.getLayers().length) {
-        map.fitBounds(group.getBounds().pad(0.1));
-      }
-    }
-
-    // Crea legenda
-    function createLegend(values) {
-      const legend = document.getElementById('legend');
-      legend.innerHTML = '<strong>Legenda SIGLA_PEDO</strong><br>';
-      values.forEach(v => {
-        const c = colorMap[v] || '#ccc';
-        legend.innerHTML += `<div><span style="display:inline-block;width:20px;height:12px;background:${c};margin-right:8px;"></span>${v}</div>`;
-      });
-    }
-
-    // Export PNG
-    document.getElementById('exportBtn').onclick = () => {
-      domtoimage.toBlob(document.getElementById('map'))
-        .then(blob => {
-          const url = URL.createObjectURL(blob);
-          const link = document.createElement('a');
-          link.href = url;
-          link.download = 'mappa.png';
-          document.body.appendChild(link);
-          link.click();
-          link.remove();
-          URL.revokeObjectURL(url);
-        })
-        .catch(e => alert('Errore esportazione: ' + e));
-    };
-  </script>
+        <!-- Mappa ArcGIS -->
+        <arcgis-embedded-map 
+            item-id="3883039559f74d2d97d1d8f7119ae009" 
+            theme="light" 
+            bookmarks-enabled 
+            legend-enabled 
+            information-enabled 
+            center="8.981101784910324,40.567061986923555"
+            scale="1155581.108577" 
+            portal-url="https://dipag.maps.arcgis.com">
+        </arcgis-embedded-map>
+    </div>
 
 </body>
 </html>
